@@ -223,3 +223,80 @@
   - 최선의 선택
 
 ---
+
+## 서블릿
+2023.08.09
+
+### 스프링 부트 서블릿 환경 구성
+- `@ServletComponentScan`을 사용해 서블릿을 직접 등록해 사용할 수 있도록 한다.
+
+### 서블릿 등록
+- `@WebServlet` 어노테이션
+  - name: 서블릿 이름
+  - urlPattern: URL 매핑
+- `HttpServlet` 상속
+  - `protected void service(HttpServletRequest req, HttpServletResponse res)` 을 구현하여 요청 처리 및 응답
+
+### HTTP 요청 메시지 로그로 확인하기
+- `application.properties` : `logging.level.org.apache.coyote.http11=debug
+- 개발 단계에서만 사용하자(성능 저하 고려)
+
+### 서블릿 컨테이너 동작 방식
+- 스프링 부트가 내장 톰켓 서버를 생성
+- 톰켓 : 웹 애플리케이션 서버 + 서블릿 컨테이너
+- 웹 애플리케이션 서버로 들어오는 Http 요청 메시지 기반으로 request, response 생성
+- 서블릿 컨테이너가 그 request를 처리하고 response에 응답 생성
+
+### HttpServletRequest 역할
+- HTTP 요청 메시지를 편리하게 사용할 수 있도록 대신 파싱
+- 그 결과를 `HttpServletRequest`에 담아서 제공
+- 여러 Http 요 메시지를 편리하게 조회 가능
+- 부가 기능 제공
+  - 임시 값 저장
+  - 세션 관리
+- Http 요청 메시지의 start-line , header, 데이터 정보를 조회 가능
+
+### Http 요청 데이터
+HTTP 요청 메시지를 통해 클라이언트가 서버로 데이터를 전달하는 방법은 주고 3가지
+- GET - 쿼리 파라미터
+  - /url?param1=val1&param2=val2
+  - 메시지 바디 없이, URL의 쿼리 파라미터에 데이터 전달
+  - 예) 검색, 필터, 페이징 등에서 많이 사용하는 방식
+- POST - HTML Form
+  - content-type: application/x-www-form-urlencoded
+  - 메시지 바디에 쿼리 파라미터 형식으로 전달
+  - 예) 회원 가입, 상품 주문, HTML Form 사용
+- HTTP message body
+  - HTTP API에서 주로 사용 JSON, XML, TEXT
+  - 주로 JSON 사용(사실상 표준)
+
+#### 조회 메서드
+- 쿼리 파라미터와 POST 요청의 형식이 서로 같음
+    - `HttpServletRequest`가 제공하는 `getParameter()` 함수로 조회 가능
+    - 복수 파라미터일 때는.. 이런 경우는 거의 없지만 `getParameterValues()` 제공함
+    - GET은 쿼리 파라미터
+    - POST는  `content-type:application/x-www-form-urlencoded` 헤더에 추가되고 메시지 바디에 쿼리 파라미터와 같은 형식으로 데이터 전달
+- API 메시지 바디
+  - Http 메시지 바디 데이터는 `InputStream`을 사용해 직접 읽을 수 있음
+  - 이 때 `inputStream`이 반환하는 바이트 코드를. 우리가 읽을 수 있는 문자로 볼 수 있게 `utf-8`로 지정해준다.
+  - Json 방식일 때는 Json 형식에 맞춰 데이터를 객체로 받을 수 있는 클래스를 작성한다.
+  - Json 파싱에 도움을 주는 라이브러리를 사용하여 파싱한다.
+  - Spring에서는 Jackson 라이브러리를 기본으로 제공한다.
+
+### HttpServletResponse 역할
+- HTTP 응답 메시지 생성
+  - HTTP 응답코드 지정
+  - 헤더 생성
+  - 바디 생성
+- 편의 기능 제공
+  - Content-Type
+  - 쿠키
+  - Redirect
+
+### HTTP 응답 데이터
+- 단순 텍스트 응답
+  - `writer.println("ok");`
+- HTML 응답
+  - `writer.println("<html>");` 등으로 집어 넣기
+- HTTP API - MessageBody JSON 응답
+  - `objectMapper.writeValueAsString(data);` : 객체를 Json 문자로 변경
