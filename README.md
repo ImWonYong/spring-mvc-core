@@ -390,3 +390,101 @@ HTTP 요청 메시지를 통해 클라이언트가 서버로 데이터를 전달
 
 ---
 
+# MVC 프레임워크 만들기
+2023.08.17
+
+## 프론트 컨트롤러 패턴
+- 프론트 컨트롤러 서블릿 하나로 클라이언트의 요청을 받는다.
+- 프론트 컨트롤러가 요청에 맞는 컨트롤러를 찾아서 호출
+- 입구를 하나로
+- 공통 처리 가능
+- 프론트 컨트롤러를 제외한 나머지 컨트롤러는 서블릿을 사용하지 않아도 됨
+
+스프링 웹 MVC의 DispatcherServlet이 FrontController 패턴으로 구현됨
+
+## V1
+프론트 컨트롤러를 단계적으로 도입.
+이번 목표는 기존 코드를 최대한 유지하면서, 프론트 컨트롤러를 도입하는 것이다.
+먼저 구조를 맞추어두고 점진적으로 리펙터링.
+
+- 서블릿과 비슷한 모양의 컨트롤러 인터페이스 도입
+- 인터페이스를 호출해 구현과 관계없이 로직의 일관성 가져갈 수 있다
+
+### 프론트 컨트롤러 분석
+- `urlPatterns = "/front-controller/v1/*'`: `/front-controller/v1`을 포함한 하위 모든 요청을 이 서블릿에서 받음
+- controllerMap
+  - key: 매핑 URL
+  - value: 호출된 컨트롤러
+- service(): 먼저 `requestURI`조회한 뒤 실제 컨트롤러를 `controllerMap`에서 찾음. 없으면 404 상태코드 반환. 컨트롤러 찾고 `controller.process(request, response);` 호출해 해당 컨트롤러 실행
+
+## V2 - View 분리
+모든 컨트롤러에서 뷰로 이동하는 부분에 중복이 있음
+
+```java
+    String viewPath = "/WEB-INF/views/new-form.jsp";
+    RequestDispatcher dispatcher = request.getRequestDispatcher(viewPath);
+    dispatcher.forward(request, response);
+```
+이 부분을 분리해보자
+
+### 분석
+- MyView 클래스를 만들어 중복 부분을 해결
+- 컨트롤러는 복잡한 `dispatcher.forward()`를 직업 생성해서 호출하지 않음.
+- MyView 객체 생성하고 거기에 뷰 이름만 넣고 반환
+- V1에 비교해 중복부분 확실히 제거됨
+- 프론트 컨트롤러에서 `view.render()`를 호출해 `forward`로직 수행
+
+## V3 - Model 추가
+
+### 서블릿 종속성 제거
+- 컨트롤러 입장에서 HttpServletRequest, HttpServletResponse이 필요할까?
+- 요청 파라미터 정보는 Map으로 대신 넘기도록 하면 지금 구조에서는 컨트롤러가 서블릿 기술을 몰라도 동작 가능
+- request 객체를 Model로 사용하는 대신 별도의 Model 객체 만들어 반환하면 됨.
+
+### 뷰 이름 중복 제거
+- 뷰의 논리 이름 반환하고, 실제 물리 위치 이름은 프론트 컨트롤러에서 처리하도록 단순화
+  - `/WEB-INF/views/new-form.jsp` -> new-form
+  - `/WEB-INF/views/save-result.jsp` -> save-result
+  - `/WEB-INF/views/members.jsp` -> members
+
+### 구조
+- ModelView: 서블릿 종속성을 제거하기 위해 Model을 직접 만들고, 추가로 View 이름까지 전달하는 객체를 만듦.
+- ControllerV3: 컨트롤러는 서블릿 기술을 전혀 사용하지 않고 HttpServeltRequest가 제공하는 파라미터는 프론트 컨트롤러가 paramMap에 담아서 호출해준다.
+- 뷰 리졸버: 컨트롤러가 반환한 논리 뷰 이름을 실제 물리 뷰로 변경.
+- MyView: `render()`에서 Model에 들어온 값들을 RequsetAttribute에 담아준다.
+
+## V4 - 단순하고 실용적인 컨트롤러
+- v3 컨트롤러는 서블릿 종속성을 제거하고 뷰 경로의 중복을 제거했다.
+- 그런데 인터페이스 구현 개발자 입장에서는 항상 ModelView객체를 생성해야 하고 반환해야 하는 부분이 조금 번거롭다.
+- 이번에는 컨트롤러가 `ModelView` 반환하지 않고, `ViewName`만 반환한다.
+- 이번 버전은 인터페이스에 ModelView가 없기 때문에 model은 직접 생성하지 않고 파라미터로 전달해 사용한다.
+- 컨트롤러는 단순하게 뷰의 논리 이름만 반환한다.
+
+기존 구조에서 모델을 파라미터로 넘기고, 뷰의 논리 이름을 반환한다는 아이디어를 적용해 컨트롤러 구현하는 개발자는 군더더기 없는 코드 작성 가능!!
+
+## V5 - 유연한 컨트롤러
+
+### 어댑터 패턴
+전혀 다른 인터페이스를 호환할 수 있도록 만들어주는 패턴. 이 패턴을 사용해 프론트 컨트롤러가 다양한 방식의 컨트롤러 처리 가능
+
+- 핸들러 어댑터: 중간에 어댑터 역할. 여기서 다양한 종류의 컨트롤러를 호출할 수 있음.
+- 핸들러: 컨트롤러의 이름을 더 넓은 범위인 핸들러로 변경. 어댑터가 있기 떄문에 꼭 컨틀로러 개념 뿐 아니라 어떤 것이든 해당 종류의 어댑터만 있으면 처리 가능하기 떄문
+
+### MyHandlerAdapter
+- `boolean supports(Object handler)`
+  - handler는 컨트롤러를 말함
+  - 어댑터가 해당 컨트롤러를 처리할 수 있는지 판단하는 메서드
+- `ModelView handle(HttpServletRequest request, HttpServletResponse response, Object handler)`
+  - 어댑터는 실제 컨트롤러를 호출하고, 그 결과로 ModelView 반환
+  - 실제 컨트롤러가 ModelView 반환하지 못하면, 어댑터가 ModelView를 직접 생성해서라도 반환
+  - 프론트 컨트롤러가 실제 컨트롤러를 호출했지만 이제 이 어댑터를 통해 실제 컨트롤러 호출
+
+### 프론트 컨트롤러
+- 컨트롤러 -> 핸들러: 이전에는 컨트롤러를 직접 매핑해서 사용했지만 이제는 어댑터를 사용하기 떄문에 컨트롤러 뿐만 아니라 어댑터가 지원하기만 하면, 어떤 것이라도 URL에 매핑해 사용 가능
+- 생성자: 핸들러 매핑과 어댑터를 초기화함.
+- 매핑 정보: 매핑 정보 값이 어떤 인터페이스에서의 아무 값이나 받을 수 있도록 `Object`로 변경
+- 핸들러 매핑: 핸들러 매핑 정보인 `handlerMappingMap`에서 URL에 매핑된 핸들러 객체 찾아 반환
+- 핸들러 처리할 어댑터 조회: `handler`를 처리할 수 있는 어댑터를 `adapter.supports(handler)` 통해서 찾음
+- 어댑터 호출: 어댑터의 `handle(request, response, handler)`를 호출하고 어댑터에 맞춰 반환
+
+---
